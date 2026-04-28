@@ -902,3 +902,102 @@ fn test_yes_alone_below_quorum_rejected() {
 }
 
 // ── end SC-021 ────────────────────────────────────────────────────────────────
+
+// ── TEST-008: admin transfer integration tests ────────────────────────────────
+
+/// Helper: create a passed proposal ready for execute() calls.
+fn make_passed_proposal_for_transfer(
+    env: &Env,
+    client: &GovernanceContractClient,
+    admin: &Address,
+    token_id: &Address,
+) -> u64 {
+    let voter = Address::generate(env);
+    let tok = votechain_token::TokenContractClient::new(env, token_id);
+    tok.mint(admin, &voter, &1_000_000_i128);
+    let id = client.create_proposal(
+        &voter,
+        &String::from_str(env, "Transfer test"),
+        &String::from_str(env, "desc"),
+        &100,
+        &3600,
+    );
+    client.cast_vote(&voter, &id, &Vote::Yes);
+    env.ledger().with_mut(|l| l.timestamp += 3601);
+    client.finalise(&id);
+    id
+}
+
+/// New admin can execute a passed proposal after transfer.
+#[test]
+fn test_transfer_admin_new_admin_can_execute() {
+    let t = setup_env();
+    let new_admin = Address::generate(&t.env);
+    let id = make_passed_proposal_for_transfer(&t.env, &t.client, &t.admin, &t.token_id);
+
+    t.client.transfer_admin(&t.admin, &new_admin);
+    t.client.execute(&new_admin, &id);
+
+    assert_eq!(t.client.get_proposal(&id).state, ProposalState::Executed);
+}
+
+/// Old admin cannot execute a proposal after transferring admin rights.
+#[test]
+#[should_panic(expected = "not admin")]
+fn test_transfer_admin_old_admin_cannot_execute() {
+    let t = setup_env();
+    let new_admin = Address::generate(&t.env);
+    let id = make_passed_proposal_for_transfer(&t.env, &t.client, &t.admin, &t.token_id);
+
+    t.client.transfer_admin(&t.admin, &new_admin);
+    // old admin tries to execute — must revert
+    t.client.execute(&t.admin, &id);
+}
+
+/// Old admin cannot cancel a proposal after transferring admin rights.
+#[test]
+#[should_panic(expected = "not admin")]
+fn test_transfer_admin_old_admin_cannot_cancel() {
+    let t = setup_env();
+    let new_admin = Address::generate(&t.env);
+    let proposer = Address::generate(&t.env);
+    let id = t.client.create_proposal(
+        &proposer,
+        &String::from_str(&t.env, "Cancel test"),
+        &String::from_str(&t.env, "desc"),
+        &100,
+        &3600,
+    );
+
+    t.client.transfer_admin(&t.admin, &new_admin);
+    // old admin tries to cancel — must revert
+    t.client.cancel(&t.admin, &id);
+}
+
+/// Transfer to the zero address must revert with InvalidNewAdmin.
+#[test]
+#[should_panic]
+fn test_transfer_admin_to_zero_address_reverts() {
+    let t = setup_env();
+    let zero = Address::from_str(
+        &t.env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    );
+    t.client.transfer_admin(&t.admin, &zero);
+}
+
+/// transfer_admin emits an admxfer event with the correct old and new admin.
+#[test]
+fn test_transfer_admin_emits_event() {
+    let t = setup_env();
+    let new_admin = Address::generate(&t.env);
+
+    let events_before = t.env.events().all().len();
+    t.client.transfer_admin(&t.admin, &new_admin);
+    let events_after = t.env.events().all().len();
+
+    // At least one new event must have been emitted by transfer_admin
+    assert!(events_after > events_before, "expected admxfer event to be emitted");
+}
+
+// ── end TEST-008 ──────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 # VoteChain Contracts
 
 [![CI](https://github.com/Vera3289/votechain-contracts/actions/workflows/ci.yml/badge.svg)](https://github.com/Vera3289/votechain-contracts/actions/workflows/ci.yml)
+[![Coverage](https://github.com/Vera3289/votechain-contracts/actions/workflows/ci.yml/badge.svg?job=coverage)](https://github.com/Vera3289/votechain-contracts/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 Soroban smart contracts for **VoteChain** — decentralized on-chain governance and voting on the Stellar blockchain.
@@ -152,6 +153,15 @@ Abstain votes count toward the quorum threshold but do not influence the yes/no 
 ---
 
 ## Environment Configuration
+
+Copy `.env.example` to `.env` and fill in the values before running any scripts:
+
+```bash
+cp .env.example .env
+# edit .env — set NETWORK, STELLAR_RPC_URL, STELLAR_SECRET_KEY, etc.
+```
+
+> `.env` is git-ignored. Never commit real secret keys or contract addresses.
 
 Config files live in `config/` — one per environment:
 
