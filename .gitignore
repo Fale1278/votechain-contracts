@@ -4,3 +4,6 @@ target/
 .env.testnet
 .env.mainnet
 *.wasm
+
+# Never commit real secrets — use .env.example as the template
+# .env.example is intentionally tracked
