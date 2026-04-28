@@ -75,6 +75,8 @@ impl TokenContract {
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> Result<(), ContractError> {
         from.require_auth();
         if amount <= 0 { return Err(ContractError::InvalidAmount); }
+        // Transfer to self is a no-op: auth is still required but no state changes occur.
+        if from == to { return Ok(()); }
         let b = balance_of(&env, &from);
         if b < amount { return Err(ContractError::InsufficientBalance); }
         set_balance(&env, &from, b - amount);
@@ -118,6 +120,7 @@ impl TokenContract {
         set_allowance(&env, &from, &spender, allowed - amount);
         set_balance(&env, &from, b - amount);
         set_balance(&env, &to, balance_of(&env, &to) + amount);
+        events::transferred(&env, &from, &to, amount);
         Ok(())
     }
 
@@ -165,6 +168,39 @@ impl TokenContract {
         set_balance(&env, &from, b - amount);
         set_total_supply(&env, total_supply(&env) - amount);
         events::burned(&env, &from, amount);
+        Ok(())
+    }
+
+    /// Transfers admin rights to a new address. Only the current admin may call this.
+    ///
+    /// The old admin loses all privileges immediately upon successful transfer.
+    ///
+    /// # Parameters
+    /// - `env` – Soroban execution environment.
+    /// - `admin` – Current admin address; must authorise the call.
+    /// - `new_admin` – Address that will become the new admin.
+    ///
+    /// # Errors
+    /// - [`ContractError::NotAdmin`] if `admin` does not match the stored admin.
+    /// - [`ContractError::InvalidNewAdmin`] if `new_admin` is the zero address.
+    pub fn transfer_admin(
+        env: Env,
+        admin: Address,
+        new_admin: Address,
+    ) -> Result<(), ContractError> {
+        admin.require_auth();
+        if get_admin(&env)? != admin {
+            return Err(ContractError::NotAdmin);
+        }
+        let zero = Address::from_str(
+            &env,
+            "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        );
+        if new_admin == zero {
+            return Err(ContractError::InvalidNewAdmin);
+        }
+        set_admin(&env, &new_admin);
+        events::admin_transferred(&env, &admin, &new_admin);
         Ok(())
     }
 
