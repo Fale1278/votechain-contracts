@@ -153,3 +153,136 @@ fn test_events_burn() {
             && i128::try_from_val(&env, &data).ok() == Some(400_i128)
     }));
 }
+
+#[test]
+fn test_transfer_to_self_is_noop() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    c.initialize(&admin, &1_000);
+    // Transfer to self should succeed without changing balances.
+    c.transfer(&admin, &admin, &400);
+    assert_eq!(c.balance(&admin), 1_000);
+    assert_eq!(c.total_supply(), 1_000);
+    // No transfer event should be emitted for a self-transfer.
+    let events = env.events().all();
+    assert!(!events.iter().any(|(_, topics, _)| {
+        topics == (symbol_short!("transfer"), admin.clone(), admin.clone()).into_val(&env)
+    }));
+}
+
+#[test]
+#[should_panic]
+fn test_transfer_zero_amount() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    c.initialize(&admin, &1_000);
+    // Zero amount must be rejected.
+    c.transfer(&admin, &user, &0);
+}
+
+#[test]
+#[should_panic]
+fn test_transfer_negative_amount() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    c.initialize(&admin, &1_000);
+    // Negative amount must be rejected.
+    c.transfer(&admin, &user, &-1);
+}
+
+#[test]
+fn test_transfer_event_emitted() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    c.initialize(&admin, &1_000);
+    c.transfer(&admin, &user, &250);
+    let events = env.events().all();
+    assert!(events.iter().any(|(_, topics, data)| {
+        topics == (symbol_short!("transfer"), admin.clone(), user.clone()).into_val(&env)
+            && i128::try_from_val(&env, &data).ok() == Some(250_i128)
+    }));
+}
+
+// ── SC-017: transfer_admin tests ──────────────────────────────────────────────
+
+#[test]
+fn test_transfer_admin_success() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    c.initialize(&admin, &1_000);
+    c.transfer_admin(&admin, &new_admin);
+    // new admin can now mint (proves privilege transfer)
+    let user = Address::generate(&env);
+    c.mint(&new_admin, &user, &500);
+    assert_eq!(c.balance(&user), 500);
+}
+
+#[test]
+fn test_transfer_admin_old_admin_loses_privileges() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    c.initialize(&admin, &1_000);
+    c.transfer_admin(&admin, &new_admin);
+    // new admin can now mint (proves privilege transfer)
+    let user = Address::generate(&env);
+    c.mint(&new_admin, &user, &500);
+    assert_eq!(c.balance(&user), 500);
+}
+
+#[test]
+#[should_panic(expected = "not admin")]
+fn test_transfer_admin_old_admin_cannot_mint() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    c.initialize(&admin, &1_000);
+    c.transfer_admin(&admin, &new_admin);
+    // old admin can no longer mint — must panic
+    let user = Address::generate(&env);
+    c.mint(&admin, &user, &100);
+}
+
+#[test]
+#[should_panic(expected = "not admin")]
+fn test_transfer_admin_non_admin_reverts() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    c.initialize(&admin, &1_000);
+    c.transfer_admin(&non_admin, &new_admin);
+}
+
+#[test]
+#[should_panic]
+fn test_transfer_admin_zero_address_reverts() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    c.initialize(&admin, &1_000);
+    let zero = Address::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    );
+    c.transfer_admin(&admin, &zero);
+}
+
+#[test]
+fn test_transfer_admin_emits_event() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    c.initialize(&admin, &1_000);
+    c.transfer_admin(&admin, &new_admin);
+    let events = env.events().all();
+    assert!(events.iter().any(|(_, topics, data)| {
+        topics == (symbol_short!("admxfer"),).into_val(&env)
+            && data == (admin.clone(), new_admin.clone()).into_val(&env)
+    }));
+}
+
+// ── end SC-017 ────────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ use crate::types::{ProposalState, Vote};
 /// | execute       | `"executed"`   | `id: u64`     | `()`                              |
 /// | cancel        | `"cancelled"`  | `id: u64`     | `()`                              |
 /// | update_quorum | `"qupdate"`    | `id: u64`     | `new_quorum: i128`                |
+/// | transfer_admin | `"admxfer"`   | —             | `(old_admin, new_admin): (Address, Address)` |
 
 /// Emits an `init` event when the contract is initialised.
 ///
@@ -70,4 +71,15 @@ pub fn proposal_cancelled(env: &Env, id: u64) {
 /// Data: `new_quorum: i128`
 pub fn quorum_updated(env: &Env, id: u64, new_quorum: i128) {
     env.events().publish((symbol_short!("qupdate"), id), new_quorum);
+}
+
+/// Emits an `admxfer` event when admin rights are transferred.
+///
+/// Topics: `("admxfer",)`  
+/// Data: `(old_admin: Address, new_admin: Address)`
+pub fn admin_transferred(env: &Env, old_admin: &Address, new_admin: &Address) {
+    env.events().publish(
+        (symbol_short!("admxfer"),),
+        (old_admin.clone(), new_admin.clone()),
+    );
 }

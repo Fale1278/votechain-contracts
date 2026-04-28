@@ -3,6 +3,7 @@
 use super::*;
 use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, String};
 use crate::test_helpers::{setup_env, create_test_proposal, mint_and_vote};
+use crate::storage;
 
 // ── local helpers for tests that need a custom Env/client shape ───────────────
 
