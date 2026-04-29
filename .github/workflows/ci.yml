@@ -7,6 +7,26 @@ on:
 env:
   CARGO_TERM_COLOR: always
 jobs:
+  license-check:
+    name: License Headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Apache 2.0 license header on all .rs files
+        run: |
+          missing=()
+          while IFS= read -r -d '' file; do
+            if ! head -3 "$file" | grep -q "Apache License\|Apache-2.0\|Licensed under the Apache"; then
+              missing+=("$file")
+            fi
+          done < <(find contracts -name "*.rs" -print0)
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ERROR: Missing Apache 2.0 license header in:"
+            printf '  %s\n' "${missing[@]}"
+            exit 1
+          fi
+          echo "All .rs files have the license header."
+
   test:
     name: Build & Test
     runs-on: ubuntu-latest
