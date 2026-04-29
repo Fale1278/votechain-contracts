@@ -15,6 +15,7 @@ export default function App() {
     <main className="container" aria-label="VoteChain governance dashboard">
       <header className="header">
         <div>
+          <img src="/src/logo.svg" alt="VoteChain governance logo" width="60" height="60" />
           <p>VoteChain governance dashboard</p>
           <h1>Proposal search, vote history, and accessibility-ready UI</h1>
         </div>
@@ -24,6 +25,7 @@ export default function App() {
               key={tab.key}
               type="button"
               className={page === tab.key ? 'active-tab' : ''}
+              aria-pressed={page === tab.key}
               onClick={() => setPage(tab.key)}
             >
               {tab.label}
