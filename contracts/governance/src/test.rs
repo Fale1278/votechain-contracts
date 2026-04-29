@@ -22,7 +22,7 @@ fn new_client(env: &Env) -> GovernanceContractClient<'static> {
 fn setup_passed_proposal(env: &Env, client: &GovernanceContractClient, admin: &Address) -> u64 {
     let voter = Address::generate(env);
     let token_id = setup_token(env, &voter);
-    client.initialize(admin, &token_id, &0_i128, &0_u64, &false);
+    client.initialize(admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
     let id = client.create_proposal(
         &voter,
         &String::from_str(env, "Prop"),
@@ -40,7 +40,7 @@ fn setup_passed_proposal(env: &Env, client: &GovernanceContractClient, admin: &A
 fn setup_active_proposal(env: &Env, client: &GovernanceContractClient, admin: &Address) -> u64 {
     let proposer = Address::generate(env);
     let token_id = setup_token(env, admin);
-    client.initialize(admin, &token_id, &0_i128, &0_u64, &false);
+    client.initialize(admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
     client.create_proposal(
         &proposer,
         &String::from_str(env, "Prop"),
@@ -70,7 +70,7 @@ fn test_initialize() {
     let tok = votechain_token::TokenContractClient::new(&env, &tok_id);
     tok.initialize(&admin, &10_000_000);
 
-    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &false);
+    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &false, &0_u64);
 
     // After initialize: state must be Ready
     assert_eq!(client.get_state(), ContractState::Ready);
@@ -103,7 +103,7 @@ fn test_initialize_emits_event() {
     let tok = votechain_token::TokenContractClient::new(&env, &tok_id);
     tok.initialize(&admin, &10_000_000);
 
-    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &false);
+    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &false, &0_u64);
 
     // The "init" event must have been published with admin as data
     let events = env.events().all();
@@ -366,7 +366,7 @@ fn test_execute_rejected_proposal_reverts() {
     let client = new_client(&env);
     let admin = Address::generate(&env);
     let token_id = setup_token(&env, &admin);
-    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false);
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
     // Create a proposal that will be rejected (no votes, below quorum)
     let id = client.create_proposal(
         &admin,
@@ -785,7 +785,7 @@ fn test_vote_tallies_all_three_types() {
 #[should_panic]
 fn test_reinit_by_original_admin_reverts() {
     let t = setup_env();
-    t.client.initialize(&t.admin, &t.token_id, &0_i128, &0_u64, &false);
+    t.client.initialize(&t.admin, &t.token_id, &0_i128, &0_u64, &false, &0_u64);
 }
 
 /// Re-init by a new address must revert with AlreadyInitialized.
@@ -795,7 +795,7 @@ fn test_reinit_by_new_address_reverts() {
     let t = setup_env();
     let attacker = Address::generate(&t.env);
     let new_token = Address::generate(&t.env);
-    t.client.initialize(&attacker, &new_token, &0_i128, &0_u64, &false);
+    t.client.initialize(&attacker, &new_token, &0_i128, &0_u64, &false, &0_u64);
 }
 
 /// Re-init by the zero address must revert with AlreadyInitialized.
@@ -804,7 +804,7 @@ fn test_reinit_by_new_address_reverts() {
 fn test_reinit_by_zero_address_reverts() {
     let t = setup_env();
     let zero = Address::from_str(&t.env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF");
-    t.client.initialize(&zero, &t.token_id, &0_i128, &0_u64, &false);
+    t.client.initialize(&zero, &t.token_id, &0_i128, &0_u64, &false, &0_u64);
 }
 
 // ── end SEC-009 ───────────────────────────────────────────────────────────────
@@ -820,7 +820,7 @@ fn test_create_proposal_below_min_balance_reverts() {
     let admin = Address::generate(&env);
     let token_id = setup_token(&env, &admin);
     // require 500_000 tokens to propose
-    client.initialize(&admin, &token_id, &500_000_i128, &0_u64, &false);
+    client.initialize(&admin, &token_id, &500_000_i128, &0_u64, &false, &0_u64);
 
     let proposer = Address::generate(&env);
     // proposer has 0 tokens — should panic
@@ -840,7 +840,7 @@ fn test_create_proposal_at_min_balance_accepted() {
     let client = new_client(&env);
     let admin = Address::generate(&env);
     let token_id = setup_token(&env, &admin);
-    client.initialize(&admin, &token_id, &500_000_i128, &0_u64, &false);
+    client.initialize(&admin, &token_id, &500_000_i128, &0_u64, &false, &0_u64);
 
     let proposer = Address::generate(&env);
     let tok = votechain_token::TokenContractClient::new(&env, &token_id);
@@ -867,7 +867,7 @@ fn test_create_proposal_within_cooldown_reverts() {
     // start at non-zero so the `last > 0` sentinel works
     env.ledger().with_mut(|l| l.timestamp = 1_000);
     // 1 hour cooldown, no balance requirement
-    client.initialize(&admin, &token_id, &0_i128, &3600_u64, &false);
+    client.initialize(&admin, &token_id, &0_i128, &3600_u64, &false, &0_u64);
 
     let proposer = Address::generate(&env);
     client.create_proposal(
@@ -894,7 +894,7 @@ fn test_create_proposal_after_cooldown_accepted() {
     let client = new_client(&env);
     let admin = Address::generate(&env);
     let token_id = setup_token(&env, &admin);
-    client.initialize(&admin, &token_id, &0_i128, &3600_u64, &false);
+    client.initialize(&admin, &token_id, &0_i128, &3600_u64, &false, &0_u64);
 
     let proposer = Address::generate(&env);
     client.create_proposal(
@@ -1152,7 +1152,7 @@ fn test_admin_cannot_vote_own_proposal_when_restricted() {
     tok.initialize(&admin, &10_000_000);
     let client = new_client(&env);
     // enable restriction
-    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &true);
+    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &true, &0_u64);
     let id = client.create_proposal(
         &admin,
         &String::from_str(&env, "Admin prop"),
@@ -1175,7 +1175,7 @@ fn test_admin_can_vote_own_proposal_when_not_restricted() {
     tok.initialize(&admin, &10_000_000);
     let client = new_client(&env);
     // restriction disabled
-    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &false);
+    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &false, &0_u64);
     let id = client.create_proposal(
         &admin,
         &String::from_str(&env, "Admin prop"),
@@ -1198,7 +1198,7 @@ fn test_non_admin_can_vote_when_admin_restricted() {
     let tok = votechain_token::TokenContractClient::new(&env, &tok_id);
     tok.initialize(&admin, &10_000_000);
     let client = new_client(&env);
-    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &true);
+    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &true, &0_u64);
     let proposer = Address::generate(&env);
     let id = client.create_proposal(
         &proposer,
@@ -1399,3 +1399,324 @@ fn test_unpause_emits_event() {
 }
 
 // ── end SEC-018 ───────────────────────────────────────────────────────────────
+
+// ── TEST-ADMIN-EXEC-CANCEL: Admin-only execution and cancellation tests ──────
+
+/// Test: execute succeeds on Passed proposal by admin
+/// Verifies that the admin can successfully execute a proposal that has reached Passed state.
+#[test]
+fn test_execute_passed_proposal_by_admin_succeeds() {
+    let t = setup_env();
+    let voter = Address::generate(&t.env);
+    let id = create_test_proposal(&t, &voter);
+    
+    // Vote to pass the proposal
+    mint_and_vote(&t, &voter, id, Vote::Yes, 1_000_000);
+    
+    // Advance time past voting period
+    t.env.ledger().with_mut(|l| l.timestamp += 3601);
+    
+    // Finalize to move to Passed state
+    t.client.finalise(&id);
+    assert_eq!(t.client.get_proposal(&id).state, ProposalState::Passed);
+    
+    // Admin executes the passed proposal
+    t.client.execute(&t.admin, &id);
+    
+    // Verify state changed to Executed
+    assert_eq!(t.client.get_proposal(&id).state, ProposalState::Executed);
+}
+
+/// Test: execute reverts for non-admin caller
+/// Verifies that a non-admin address cannot execute a proposal.
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_execute_reverts_for_non_admin_caller() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    
+    let id = setup_passed_proposal(&env, &client, &admin);
+    
+    // Non-admin attempts to execute
+    client.execute(&non_admin, &id);
+}
+
+/// Test: execute reverts on non-Passed proposal
+/// Verifies that execute fails when the proposal is not in Passed state.
+#[test]
+#[should_panic(expected = "Error(Contract, #12)")]
+fn test_execute_reverts_on_non_passed_proposal() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    
+    let id = setup_active_proposal(&env, &client, &admin);
+    
+    // Admin attempts to execute an Active proposal (not Passed)
+    client.execute(&admin, &id);
+}
+
+/// Test: cancel succeeds on Active proposal by admin
+/// Verifies that the admin can successfully cancel a proposal in Active state.
+#[test]
+fn test_cancel_active_proposal_by_admin_succeeds() {
+    let t = setup_env();
+    let proposer = Address::generate(&t.env);
+    let id = create_test_proposal(&t, &proposer);
+    
+    // Verify proposal is Active
+    assert_eq!(t.client.get_proposal(&id).state, ProposalState::Active);
+    
+    // Admin cancels the active proposal
+    t.client.cancel(&t.admin, &id);
+    
+    // Verify state changed to Cancelled
+    assert_eq!(t.client.get_proposal(&id).state, ProposalState::Cancelled);
+}
+
+/// Test: cancel reverts for non-admin caller
+/// Verifies that a non-admin address cannot cancel a proposal.
+#[test]
+#[should_panic(expected = "Error(Contract, #2)")]
+fn test_cancel_reverts_for_non_admin_caller() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    
+    let id = setup_active_proposal(&env, &client, &admin);
+    
+    // Non-admin attempts to cancel
+    client.cancel(&non_admin, &id);
+}
+
+/// Test: cancel reverts on non-Active proposal
+/// Verifies that cancel fails when the proposal is not in Active state.
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_cancel_reverts_on_non_active_proposal() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false);
+    
+    // Create and finalize a proposal to move it out of Active state
+    let id = client.create_proposal(
+        &admin,
+        &String::from_str(&env, "Prop"),
+        &String::from_str(&env, "desc"),
+        &1_000_000,
+        &3600,
+    );
+    env.ledger().with_mut(|l| l.timestamp += 3601);
+    client.finalise(&id);
+    
+    // Verify proposal is no longer Active (it's Rejected)
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Rejected);
+    
+    // Admin attempts to cancel a non-Active proposal
+    client.cancel(&admin, &id);
+}
+
+/// Test: execute emits event correctly
+/// Verifies that the execute function emits the "executed" event with correct proposal ID.
+#[test]
+fn test_execute_emits_event_correctly() {
+    let t = setup_env();
+    let voter = Address::generate(&t.env);
+    let id = create_test_proposal(&t, &voter);
+    
+    // Vote to pass the proposal
+    mint_and_vote(&t, &voter, id, Vote::Yes, 1_000_000);
+    
+    // Advance time and finalize
+    t.env.ledger().with_mut(|l| l.timestamp += 3601);
+    t.client.finalise(&id);
+    
+    // Clear events before execute
+    t.env.events().all();
+    
+    // Execute the proposal
+    t.client.execute(&t.admin, &id);
+    
+    // Verify the "executed" event was emitted with correct proposal ID
+    let events = t.env.events().all();
+    assert!(
+        events.iter().any(|(_, topics, _)| {
+            topics == (symbol_short!("executed"), id).into_val(&t.env)
+        }),
+        "expected 'executed' event with proposal ID {} to be emitted",
+        id
+    );
+}
+
+/// Test: cancel emits event correctly
+/// Verifies that the cancel function emits the "cancelled" event with correct proposal ID.
+#[test]
+fn test_cancel_emits_event_correctly() {
+    let t = setup_env();
+    let proposer = Address::generate(&t.env);
+    let id = create_test_proposal(&t, &proposer);
+    
+    // Clear events before cancel
+    t.env.events().all();
+    
+    // Cancel the proposal
+    t.client.cancel(&t.admin, &id);
+    
+    // Verify the "cancelled" event was emitted with correct proposal ID
+    let events = t.env.events().all();
+    assert!(
+        events.iter().any(|(_, topics, _)| {
+            topics == (symbol_short!("cancelled"), id).into_val(&t.env)
+        }),
+        "expected 'cancelled' event with proposal ID {} to be emitted",
+        id
+    );
+}
+
+/// Test: execute and cancel maintain state consistency
+/// Verifies that state transitions are atomic and consistent across multiple operations.
+#[test]
+fn test_execute_and_cancel_maintain_state_consistency() {
+    let t = setup_env();
+    let voter = Address::generate(&t.env);
+    
+    // Create two proposals
+    let id1 = create_test_proposal(&t, &voter);
+    let id2 = create_test_proposal(&t, &voter);
+    
+    // Pass and execute first proposal
+    mint_and_vote(&t, &voter, id1, Vote::Yes, 1_000_000);
+    t.env.ledger().with_mut(|l| l.timestamp += 3601);
+    t.client.finalise(&id1);
+    t.client.execute(&t.admin, &id1);
+    
+    // Cancel second proposal
+    t.client.cancel(&t.admin, &id2);
+    
+    // Verify both states are correct and independent
+    assert_eq!(t.client.get_proposal(&id1).state, ProposalState::Executed);
+    assert_eq!(t.client.get_proposal(&id2).state, ProposalState::Cancelled);
+}
+
+/// Test: execute requires auth from admin
+/// Verifies that execute properly checks admin authorization.
+#[test]
+#[should_panic]
+fn test_execute_requires_admin_auth() {
+    let env = Env::default();
+    // Don't mock all auths - this will cause auth check to fail
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    
+    let id = setup_passed_proposal(&env, &client, &admin);
+    
+    // This should panic due to failed auth check
+    client.execute(&admin, &id);
+}
+
+/// Test: cancel requires auth from admin
+/// Verifies that cancel properly checks admin authorization.
+#[test]
+#[should_panic]
+fn test_cancel_requires_admin_auth() {
+    let env = Env::default();
+    // Don't mock all auths - this will cause auth check to fail
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    
+    let id = setup_active_proposal(&env, &client, &admin);
+    
+    // This should panic due to failed auth check
+    client.cancel(&admin, &id);
+}
+
+/// Test: execute on Cancelled proposal reverts
+/// Verifies that execute fails when proposal is in Cancelled state.
+#[test]
+#[should_panic(expected = "Error(Contract, #12)")]
+fn test_execute_on_cancelled_proposal_reverts() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    
+    let id = setup_active_proposal(&env, &client, &admin);
+    
+    // Cancel the proposal first
+    client.cancel(&admin, &id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Cancelled);
+    
+    // Attempt to execute a cancelled proposal
+    client.execute(&admin, &id);
+}
+
+/// Test: cancel on Executed proposal reverts
+/// Verifies that cancel fails when proposal is in Executed state.
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_cancel_on_executed_proposal_reverts() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    
+    let id = setup_passed_proposal(&env, &client, &admin);
+    
+    // Execute the proposal first
+    client.execute(&admin, &id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Executed);
+    
+    // Attempt to cancel an executed proposal
+    client.cancel(&admin, &id);
+}
+
+/// Test: multiple execute calls on same proposal revert
+/// Verifies that a proposal can only be executed once.
+#[test]
+#[should_panic(expected = "Error(Contract, #12)")]
+fn test_multiple_execute_calls_revert() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    
+    let id = setup_passed_proposal(&env, &client, &admin);
+    
+    // First execute succeeds
+    client.execute(&admin, &id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Executed);
+    
+    // Second execute on same proposal should revert
+    client.execute(&admin, &id);
+}
+
+/// Test: multiple cancel calls on same proposal revert
+/// Verifies that a proposal can only be cancelled once.
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_multiple_cancel_calls_revert() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    
+    let id = setup_active_proposal(&env, &client, &admin);
+    
+    // First cancel succeeds
+    client.cancel(&admin, &id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Cancelled);
+    
+    // Second cancel on same proposal should revert
+    client.cancel(&admin, &id);
+}
+
+// ── end TEST-ADMIN-EXEC-CANCEL ────────────────────────────────────────────────

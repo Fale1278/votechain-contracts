@@ -40,11 +40,12 @@ use crate::types::{ContractError, ContractState, DataKey, Proposal, VoteRecord};
 //
 //   DataKey::Admin              – admin address (set at init, read on admin ops)
 //   DataKey::VotingToken        – governance token address (read on every vote)
-//   DataKey::ProposalCount      – monotonic proposal ID counter
+//   DataKey::ProposalCount      – monotonic proposal ID counter (SEC-007)
 //   DataKey::MinProposalBalance – minimum token balance to create a proposal
 //   DataKey::ProposalCooldown   – seconds between proposals per address
-//   DataKey::MinDuration        – minimum allowed voting duration in seconds
-//   DataKey::MaxDuration        – maximum allowed voting duration in seconds
+//   DataKey::ContractState      – lifecycle state (Uninitialized / Ready)
+//   DataKey::RestrictAdminVote  – whether admin may vote on own proposals
+//   DataKey::Paused             – contract pause flag
 //   DataKey::Version            – semver tuple (major, minor, patch)
 //
 // PERSISTENT storage – per-key TTL, survives ledger expiry independently.
@@ -78,10 +79,19 @@ pub fn load_proposal(env: &Env, id: u64) -> Result<Proposal, ContractError> {
 }
 
 /// Increments the proposal counter and returns the new ID.
-pub fn next_id(env: &Env) -> u64 {
-    let n: u64 = env.storage().instance().get(&DataKey::ProposalCount).unwrap_or(0) + 1;
+///
+/// SEC-007: The counter is the sole source of proposal IDs; no caller-supplied
+/// ID is accepted.  The read-increment-write executes atomically within a
+/// single Soroban transaction, so concurrent creation attempts (different
+/// transactions in the same ledger) each observe a unique counter value.
+///
+/// # Errors
+/// - [`ContractError::ProposalCountOverflow`] if the counter would exceed `u64::MAX`.
+pub fn next_id(env: &Env) -> Result<u64, ContractError> {
+    let current: u64 = env.storage().instance().get(&DataKey::ProposalCount).unwrap_or(0);
+    let n = current.checked_add(1).ok_or(ContractError::ProposalCountOverflow)?;
     env.storage().instance().set(&DataKey::ProposalCount, &n);
-    n
+    Ok(n)
 }
 
 /// Stores the admin address in instance storage.
@@ -217,6 +227,16 @@ pub fn set_restrict_admin_vote(env: &Env, v: bool) {
 /// Returns whether admin vote restriction is enabled. Defaults to `false`.
 pub fn get_restrict_admin_vote(env: &Env) -> bool {
     env.storage().instance().get(&DataKey::RestrictAdminVote).unwrap_or(false)
+}
+
+/// Stores the mandatory delay (seconds) a passed proposal must wait before it can be executed.
+pub fn set_timelock_duration(env: &Env, v: u64) {
+    env.storage().instance().set(&DataKey::TimelockDuration, &v);
+}
+
+/// Returns the configured timelock duration in seconds. Defaults to 0 (no delay).
+pub fn get_timelock_duration(env: &Env) -> u64 {
+    env.storage().instance().get(&DataKey::TimelockDuration).unwrap_or(0)
 }
 
 /// Sets the contract paused state.
