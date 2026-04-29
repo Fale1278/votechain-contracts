@@ -22,7 +22,7 @@ fn new_client(env: &Env) -> GovernanceContractClient<'static> {
 fn setup_passed_proposal(env: &Env, client: &GovernanceContractClient, admin: &Address) -> u64 {
     let voter = Address::generate(env);
     let token_id = setup_token(env, &voter);
-    client.initialize(admin, &token_id, &0_i128, &0_u64, &false);
+    client.initialize(admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
     let id = client.create_proposal(
         &voter,
         &String::from_str(env, "Prop"),
@@ -40,7 +40,7 @@ fn setup_passed_proposal(env: &Env, client: &GovernanceContractClient, admin: &A
 fn setup_active_proposal(env: &Env, client: &GovernanceContractClient, admin: &Address) -> u64 {
     let proposer = Address::generate(env);
     let token_id = setup_token(env, admin);
-    client.initialize(admin, &token_id, &0_i128, &0_u64, &false);
+    client.initialize(admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
     client.create_proposal(
         &proposer,
         &String::from_str(env, "Prop"),
@@ -70,7 +70,7 @@ fn test_initialize() {
     let tok = votechain_token::TokenContractClient::new(&env, &tok_id);
     tok.initialize(&admin, &10_000_000);
 
-    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &false);
+    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &false, &0_u64);
 
     // After initialize: state must be Ready
     assert_eq!(client.get_state(), ContractState::Ready);
@@ -103,7 +103,7 @@ fn test_initialize_emits_event() {
     let tok = votechain_token::TokenContractClient::new(&env, &tok_id);
     tok.initialize(&admin, &10_000_000);
 
-    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &false);
+    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &false, &0_u64);
 
     // The "init" event must have been published with admin as data
     let events = env.events().all();
@@ -366,7 +366,7 @@ fn test_execute_rejected_proposal_reverts() {
     let client = new_client(&env);
     let admin = Address::generate(&env);
     let token_id = setup_token(&env, &admin);
-    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false);
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
     // Create a proposal that will be rejected (no votes, below quorum)
     let id = client.create_proposal(
         &admin,
@@ -785,7 +785,7 @@ fn test_vote_tallies_all_three_types() {
 #[should_panic]
 fn test_reinit_by_original_admin_reverts() {
     let t = setup_env();
-    t.client.initialize(&t.admin, &t.token_id, &0_i128, &0_u64, &false);
+    t.client.initialize(&t.admin, &t.token_id, &0_i128, &0_u64, &false, &0_u64);
 }
 
 /// Re-init by a new address must revert with AlreadyInitialized.
@@ -795,7 +795,7 @@ fn test_reinit_by_new_address_reverts() {
     let t = setup_env();
     let attacker = Address::generate(&t.env);
     let new_token = Address::generate(&t.env);
-    t.client.initialize(&attacker, &new_token, &0_i128, &0_u64, &false);
+    t.client.initialize(&attacker, &new_token, &0_i128, &0_u64, &false, &0_u64);
 }
 
 /// Re-init by the zero address must revert with AlreadyInitialized.
@@ -804,7 +804,7 @@ fn test_reinit_by_new_address_reverts() {
 fn test_reinit_by_zero_address_reverts() {
     let t = setup_env();
     let zero = Address::from_str(&t.env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF");
-    t.client.initialize(&zero, &t.token_id, &0_i128, &0_u64, &false);
+    t.client.initialize(&zero, &t.token_id, &0_i128, &0_u64, &false, &0_u64);
 }
 
 // ── end SEC-009 ───────────────────────────────────────────────────────────────
@@ -820,7 +820,7 @@ fn test_create_proposal_below_min_balance_reverts() {
     let admin = Address::generate(&env);
     let token_id = setup_token(&env, &admin);
     // require 500_000 tokens to propose
-    client.initialize(&admin, &token_id, &500_000_i128, &0_u64, &false);
+    client.initialize(&admin, &token_id, &500_000_i128, &0_u64, &false, &0_u64);
 
     let proposer = Address::generate(&env);
     // proposer has 0 tokens — should panic
@@ -840,7 +840,7 @@ fn test_create_proposal_at_min_balance_accepted() {
     let client = new_client(&env);
     let admin = Address::generate(&env);
     let token_id = setup_token(&env, &admin);
-    client.initialize(&admin, &token_id, &500_000_i128, &0_u64, &false);
+    client.initialize(&admin, &token_id, &500_000_i128, &0_u64, &false, &0_u64);
 
     let proposer = Address::generate(&env);
     let tok = votechain_token::TokenContractClient::new(&env, &token_id);
@@ -867,7 +867,7 @@ fn test_create_proposal_within_cooldown_reverts() {
     // start at non-zero so the `last > 0` sentinel works
     env.ledger().with_mut(|l| l.timestamp = 1_000);
     // 1 hour cooldown, no balance requirement
-    client.initialize(&admin, &token_id, &0_i128, &3600_u64, &false);
+    client.initialize(&admin, &token_id, &0_i128, &3600_u64, &false, &0_u64);
 
     let proposer = Address::generate(&env);
     client.create_proposal(
@@ -894,7 +894,7 @@ fn test_create_proposal_after_cooldown_accepted() {
     let client = new_client(&env);
     let admin = Address::generate(&env);
     let token_id = setup_token(&env, &admin);
-    client.initialize(&admin, &token_id, &0_i128, &3600_u64, &false);
+    client.initialize(&admin, &token_id, &0_i128, &3600_u64, &false, &0_u64);
 
     let proposer = Address::generate(&env);
     client.create_proposal(
@@ -1152,7 +1152,7 @@ fn test_admin_cannot_vote_own_proposal_when_restricted() {
     tok.initialize(&admin, &10_000_000);
     let client = new_client(&env);
     // enable restriction
-    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &true);
+    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &true, &0_u64);
     let id = client.create_proposal(
         &admin,
         &String::from_str(&env, "Admin prop"),
@@ -1175,7 +1175,7 @@ fn test_admin_can_vote_own_proposal_when_not_restricted() {
     tok.initialize(&admin, &10_000_000);
     let client = new_client(&env);
     // restriction disabled
-    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &false);
+    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &false, &0_u64);
     let id = client.create_proposal(
         &admin,
         &String::from_str(&env, "Admin prop"),
@@ -1198,7 +1198,7 @@ fn test_non_admin_can_vote_when_admin_restricted() {
     let tok = votechain_token::TokenContractClient::new(&env, &tok_id);
     tok.initialize(&admin, &10_000_000);
     let client = new_client(&env);
-    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &true);
+    client.initialize(&admin, &tok_id, &0_i128, &0_u64, &true, &0_u64);
     let proposer = Address::generate(&env);
     let id = client.create_proposal(
         &proposer,
@@ -1399,3 +1399,146 @@ fn test_unpause_emits_event() {
 }
 
 // ── end SEC-018 ───────────────────────────────────────────────────────────────
+
+// ── SEC-011: voting duration validation tests ─────────────────────────────────
+
+/// Duration = 0 must revert with InvalidDuration (#5), not InvalidDurationRange.
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")]
+fn test_create_proposal_duration_zero_reverts() {
+    let t = setup_env();
+    let proposer = Address::generate(&t.env);
+    t.client.create_proposal(
+        &proposer,
+        &String::from_str(&t.env, "Zero dur"),
+        &String::from_str(&t.env, "desc"),
+        &100,
+        &0,
+    );
+}
+
+/// Duration below MIN_DURATION (60 s) must revert with InvalidDurationRange (#21).
+#[test]
+#[should_panic(expected = "Error(Contract, #21)")]
+fn test_create_proposal_duration_below_min_reverts() {
+    let t = setup_env();
+    let proposer = Address::generate(&t.env);
+    t.client.create_proposal(
+        &proposer,
+        &String::from_str(&t.env, "Short dur"),
+        &String::from_str(&t.env, "desc"),
+        &100,
+        &30, // 30 s < MIN_DURATION (60 s)
+    );
+}
+
+/// Duration exactly at MIN_DURATION (60 s) must be accepted.
+#[test]
+fn test_create_proposal_duration_at_min_accepted() {
+    let t = setup_env();
+    let proposer = Address::generate(&t.env);
+    let id = t.client.create_proposal(
+        &proposer,
+        &String::from_str(&t.env, "Min dur"),
+        &String::from_str(&t.env, "desc"),
+        &100,
+        &60, // exactly MIN_DURATION
+    );
+    let p = t.client.get_proposal(&id);
+    assert_eq!(p.state, ProposalState::Active);
+    assert!(p.end_time > p.start_time);
+}
+
+// ── end SEC-011 ───────────────────────────────────────────────────────────────
+
+// ── SEC-015: execution timelock tests ────────────────────────────────────────
+
+/// execute() before the timelock expires must revert with TimelockNotExpired (#28).
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_execute_before_timelock_reverts() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let voter = Address::generate(&env);
+    let token_id = setup_token(&env, &voter);
+    let client = new_client(&env);
+    // 1-hour timelock
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &3600_u64);
+
+    let id = client.create_proposal(
+        &voter,
+        &String::from_str(&env, "Timelock prop"),
+        &String::from_str(&env, "desc"),
+        &100,
+        &3600,
+    );
+    client.cast_vote(&voter, &id, &Vote::Yes);
+    // advance past voting period → finalise → proposal passes; execute_after = now + 3600
+    env.ledger().with_mut(|l| l.timestamp += 3601);
+    client.finalise(&id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Passed);
+    // attempt to execute immediately — timelock not yet expired
+    client.execute(&admin, &id);
+}
+
+/// execute() after the timelock has elapsed must succeed.
+#[test]
+fn test_execute_after_timelock_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let voter = Address::generate(&env);
+    let token_id = setup_token(&env, &voter);
+    let client = new_client(&env);
+    // 1-hour timelock
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &3600_u64);
+
+    let id = client.create_proposal(
+        &voter,
+        &String::from_str(&env, "Timelock prop"),
+        &String::from_str(&env, "desc"),
+        &100,
+        &3600,
+    );
+    client.cast_vote(&voter, &id, &Vote::Yes);
+    // advance past voting period and finalise
+    env.ledger().with_mut(|l| l.timestamp += 3601);
+    client.finalise(&id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Passed);
+    // advance past the 1-hour timelock
+    env.ledger().with_mut(|l| l.timestamp += 3600);
+    client.execute(&admin, &id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Executed);
+}
+
+/// finalise() emits the final event with execute_after set for a passed proposal.
+#[test]
+fn test_finalise_passed_event_includes_execute_after() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let voter = Address::generate(&env);
+    let token_id = setup_token(&env, &voter);
+    let client = new_client(&env);
+    // 1-hour timelock
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &3600_u64);
+
+    let id = client.create_proposal(
+        &voter,
+        &String::from_str(&env, "Timelock prop"),
+        &String::from_str(&env, "desc"),
+        &100,
+        &3600,
+    );
+    client.cast_vote(&voter, &id, &Vote::Yes);
+    env.ledger().with_mut(|l| l.timestamp += 3601);
+    client.finalise(&id);
+
+    // The stored execute_after must be greater than the end_time.
+    let p = client.get_proposal(&id);
+    assert_eq!(p.state, ProposalState::Passed);
+    assert!(p.execute_after > p.end_time, "execute_after must be after end_time");
+}
+
+// ── end SEC-015 ───────────────────────────────────────────────────────────────

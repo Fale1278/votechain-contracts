@@ -59,6 +59,8 @@ pub enum ContractError {
     ContractPaused = 26,
     /// 27 – Contract is not paused
     NotPaused = 27,
+    /// 28 – Timelock period has not yet elapsed; proposal cannot be executed yet
+    TimelockNotExpired = 28,
 }
 
 /// Lifecycle state of the governance contract itself.
@@ -106,6 +108,9 @@ pub struct Proposal {
     pub start_time: u64,
     pub end_time: u64,
     pub state: ProposalState,
+    /// Earliest Unix timestamp at which the proposal may be executed.
+    /// Set to `end_time + timelock_duration` when the proposal passes; 0 otherwise.
+    pub execute_after: u64,
 }
 
 /// Storage key enum for the governance contract.
@@ -189,6 +194,10 @@ pub enum DataKey {
     /// Key space: one entry per `(proposal_id, voter)` pair.
     /// Kept separate from `VoteRecord` to allow independent querying of vote weight.
     VoterSnapshot(u64, Address),
+
+    /// Mandatory delay (seconds) between a proposal passing and it becoming executable (instance storage).
+    /// Key space: singleton — only one `TimelockDuration` entry exists.
+    TimelockDuration,
 }
 
 #[contracttype]
