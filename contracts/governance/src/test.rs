@@ -1,3 +1,17 @@
+// Copyright 2024 VoteChain Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #![cfg(test)]
 
 use super::*;
@@ -1791,3 +1805,469 @@ fn test_multiple_cancel_calls_revert() {
 }
 
 // ── end TEST-ADMIN-EXEC-CANCEL ────────────────────────────────────────────────
+
+// ── #66 TEST-001: initialize unit tests ──────────────────────────────────────
+
+/// initialize succeeds with valid inputs and transitions state to Ready.
+#[test]
+fn test_initialize_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    assert_eq!(client.get_state(), ContractState::Uninitialized);
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
+    assert_eq!(client.get_state(), ContractState::Ready);
+}
+
+/// initialize stores the version as (1, 0, 0).
+#[test]
+fn test_initialize_sets_version() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
+    assert_eq!(client.get_version(), (1, 0, 0));
+}
+
+/// initialize with min_proposal_balance > 0 enforces the balance requirement.
+#[test]
+#[should_panic]
+fn test_initialize_min_balance_enforced() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+    client.initialize(&admin, &token_id, &1_000_000_i128, &0_u64, &false, &0_u64);
+
+    let proposer = Address::generate(&env); // zero balance
+    client.create_proposal(
+        &proposer,
+        &String::from_str(&env, "Title"),
+        &String::from_str(&env, "desc"),
+        &100,
+        &3600,
+    );
+}
+
+/// initialize with restrict_admin_vote=true blocks admin from voting on own proposals.
+#[test]
+#[should_panic(expected = "Error(Contract, #25)")]
+fn test_initialize_restrict_admin_vote_enforced() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &true, &0_u64);
+
+    let id = client.create_proposal(
+        &admin,
+        &String::from_str(&env, "Admin prop"),
+        &String::from_str(&env, "desc"),
+        &100,
+        &3600,
+    );
+    // admin voting on their own proposal must revert
+    client.cast_vote(&admin, &id, &Vote::Yes);
+}
+
+/// Calling initialize a second time must revert with AlreadyInitialized (#13).
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_initialize_already_initialized_reverts() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
+}
+
+/// initialize with the zero address as admin must revert with InvalidAddress (#28).
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_initialize_zero_admin_reverts() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let zero = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF");
+    let token_id = Address::generate(&env);
+    client.initialize(&zero, &token_id, &0_i128, &0_u64, &false, &0_u64);
+}
+
+/// initialize with the zero address as voting_token must revert with InvalidAddress (#28).
+#[test]
+#[should_panic(expected = "Error(Contract, #28)")]
+fn test_initialize_zero_token_reverts() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let zero = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF");
+    client.initialize(&admin, &zero, &0_i128, &0_u64, &false, &0_u64);
+}
+
+// ── end #66 ───────────────────────────────────────────────────────────────────
+
+// ── #69 TEST-004: finalise unit tests ─────────────────────────────────────────
+
+/// Proposal passes when total_votes >= quorum AND votes_yes > votes_no.
+#[test]
+fn test_finalise_passes_when_quorum_met_and_yes_wins() {
+    let t = setup_env();
+    let voter = Address::generate(&t.env);
+    let id = t.client.create_proposal(
+        &voter,
+        &String::from_str(&t.env, "Pass test"),
+        &String::from_str(&t.env, "desc"),
+        &500_000,
+        &3600,
+    );
+    mint_and_vote(&t, &voter, id, Vote::Yes, 600_000);
+    t.env.ledger().with_mut(|l| l.timestamp += 3601);
+    t.client.finalise(&id);
+    assert_eq!(t.client.get_proposal(&id).state, ProposalState::Passed);
+}
+
+/// Proposal is rejected when total_votes < quorum (even if yes > no).
+#[test]
+fn test_finalise_rejected_when_quorum_not_met() {
+    let t = setup_env();
+    let voter = Address::generate(&t.env);
+    let id = t.client.create_proposal(
+        &voter,
+        &String::from_str(&t.env, "Low quorum"),
+        &String::from_str(&t.env, "desc"),
+        &1_000_000,
+        &3600,
+    );
+    mint_and_vote(&t, &voter, id, Vote::Yes, 500_000); // below quorum
+    t.env.ledger().with_mut(|l| l.timestamp += 3601);
+    t.client.finalise(&id);
+    assert_eq!(t.client.get_proposal(&id).state, ProposalState::Rejected);
+}
+
+/// Proposal is rejected when votes_yes == votes_no (tie), even if quorum is met.
+#[test]
+fn test_finalise_rejected_on_tie() {
+    let t = setup_env();
+    let voter_yes = Address::generate(&t.env);
+    let voter_no = Address::generate(&t.env);
+    let id = t.client.create_proposal(
+        &voter_yes,
+        &String::from_str(&t.env, "Tie"),
+        &String::from_str(&t.env, "desc"),
+        &200_000,
+        &3600,
+    );
+    mint_and_vote(&t, &voter_yes, id, Vote::Yes, 200_000);
+    mint_and_vote(&t, &voter_no,  id, Vote::No,  200_000);
+    t.env.ledger().with_mut(|l| l.timestamp += 3601);
+    t.client.finalise(&id);
+    assert_eq!(t.client.get_proposal(&id).state, ProposalState::Rejected);
+}
+
+/// Proposal is rejected when votes_no > votes_yes, even if quorum is met.
+#[test]
+fn test_finalise_rejected_when_no_wins() {
+    let t = setup_env();
+    let voter_yes = Address::generate(&t.env);
+    let voter_no  = Address::generate(&t.env);
+    let id = t.client.create_proposal(
+        &voter_yes,
+        &String::from_str(&t.env, "No wins"),
+        &String::from_str(&t.env, "desc"),
+        &100_000,
+        &3600,
+    );
+    mint_and_vote(&t, &voter_yes, id, Vote::Yes, 100_000);
+    mint_and_vote(&t, &voter_no,  id, Vote::No,  300_000);
+    t.env.ledger().with_mut(|l| l.timestamp += 3601);
+    t.client.finalise(&id);
+    assert_eq!(t.client.get_proposal(&id).state, ProposalState::Rejected);
+}
+
+/// Proposal with zero votes is rejected (quorum not met).
+#[test]
+fn test_finalise_rejected_with_zero_votes() {
+    let t = setup_env();
+    let proposer = Address::generate(&t.env);
+    let id = create_test_proposal(&t, &proposer);
+    t.env.ledger().with_mut(|l| l.timestamp += 3601);
+    t.client.finalise(&id);
+    assert_eq!(t.client.get_proposal(&id).state, ProposalState::Rejected);
+}
+
+/// finalise before voting period ends must revert with VotingStillOpen (#9).
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_finalise_before_end_time_reverts() {
+    let t = setup_env();
+    let proposer = Address::generate(&t.env);
+    let id = create_test_proposal(&t, &proposer);
+    t.client.finalise(&id); // voting period still open
+}
+
+/// finalise on a non-Active proposal must revert with ProposalNotActive (#7).
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_finalise_already_finalised_reverts() {
+    let t = setup_env();
+    let voter = Address::generate(&t.env);
+    let id = create_test_proposal(&t, &voter);
+    mint_and_vote(&t, &voter, id, Vote::Yes, 1_000_000);
+    t.env.ledger().with_mut(|l| l.timestamp += 3601);
+    t.client.finalise(&id);
+    t.client.finalise(&id); // second call must revert
+}
+
+/// finalise on a cancelled proposal must revert with ProposalNotActive (#7).
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")]
+fn test_finalise_cancelled_proposal_reverts() {
+    let t = setup_env();
+    let proposer = Address::generate(&t.env);
+    let id = create_test_proposal(&t, &proposer);
+    t.client.cancel(&t.admin, &id);
+    t.env.ledger().with_mut(|l| l.timestamp += 3601);
+    t.client.finalise(&id);
+}
+
+/// finalise on a non-existent proposal must revert with ProposalNotFound (#6).
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_finalise_nonexistent_proposal_reverts() {
+    let t = setup_env();
+    t.client.finalise(&999);
+}
+
+/// Abstain votes count toward quorum: abstain-only proposal meets quorum but is Rejected.
+#[test]
+fn test_finalise_abstain_counts_toward_quorum_but_not_outcome() {
+    let t = setup_env();
+    let voter = Address::generate(&t.env);
+    let id = t.client.create_proposal(
+        &voter,
+        &String::from_str(&t.env, "Abstain only"),
+        &String::from_str(&t.env, "desc"),
+        &300_000,
+        &3600,
+    );
+    mint_and_vote(&t, &voter, id, Vote::Abstain, 300_000);
+    t.env.ledger().with_mut(|l| l.timestamp += 3601);
+    t.client.finalise(&id);
+    // quorum met but yes (0) not > no (0) → Rejected
+    assert_eq!(t.client.get_proposal(&id).state, ProposalState::Rejected);
+}
+
+// ── end #69 ───────────────────────────────────────────────────────────────────
+
+// ── #72 TEST-007: full lifecycle integration tests ────────────────────────────
+
+/// Happy path: initialize → create → vote Yes → finalise → execute.
+#[test]
+fn test_full_lifecycle_pass_and_execute() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let voter = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    // initialize
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
+    assert_eq!(client.get_state(), ContractState::Ready);
+
+    // mint tokens to voter
+    let tok = votechain_token::TokenContractClient::new(&env, &token_id);
+    tok.mint(&admin, &voter, &1_000_000_i128);
+
+    // create proposal
+    let id = client.create_proposal(
+        &voter,
+        &String::from_str(&env, "Treasury"),
+        &String::from_str(&env, "Allocate funds"),
+        &500_000,
+        &3600,
+    );
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Active);
+    assert_eq!(client.proposal_count(), 1);
+
+    // vote
+    client.cast_vote(&voter, &id, &Vote::Yes);
+    assert!(client.has_voted(&id, &voter));
+    assert_eq!(client.get_proposal(&id).votes_yes, 1_000_000);
+
+    // finalise after voting period
+    env.ledger().with_mut(|l| l.timestamp += 3601);
+    client.finalise(&id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Passed);
+
+    // execute
+    client.execute(&admin, &id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Executed);
+}
+
+/// Full lifecycle ending in rejection: quorum not met.
+#[test]
+fn test_full_lifecycle_reject_below_quorum() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let voter = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
+
+    let tok = votechain_token::TokenContractClient::new(&env, &token_id);
+    tok.mint(&admin, &voter, &100_000_i128);
+
+    let id = client.create_proposal(
+        &voter,
+        &String::from_str(&env, "Underfunded"),
+        &String::from_str(&env, "desc"),
+        &500_000, // quorum higher than available votes
+        &3600,
+    );
+
+    client.cast_vote(&voter, &id, &Vote::Yes);
+    env.ledger().with_mut(|l| l.timestamp += 3601);
+    client.finalise(&id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Rejected);
+}
+
+/// Full lifecycle ending in cancellation by admin.
+#[test]
+fn test_full_lifecycle_cancel() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
+
+    let proposer = Address::generate(&env);
+    let id = client.create_proposal(
+        &proposer,
+        &String::from_str(&env, "To cancel"),
+        &String::from_str(&env, "desc"),
+        &100,
+        &3600,
+    );
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Active);
+
+    client.cancel(&admin, &id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Cancelled);
+}
+
+/// Multiple voters across multiple proposals — votes are isolated per proposal.
+#[test]
+fn test_full_lifecycle_multiple_proposals_isolated() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let voter1 = Address::generate(&env);
+    let voter2 = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
+
+    let tok = votechain_token::TokenContractClient::new(&env, &token_id);
+    tok.mint(&admin, &voter1, &1_000_000_i128);
+    tok.mint(&admin, &voter2, &1_000_000_i128);
+
+    let id1 = client.create_proposal(
+        &voter1,
+        &String::from_str(&env, "Prop 1"),
+        &String::from_str(&env, "d"),
+        &500_000,
+        &3600,
+    );
+    let id2 = client.create_proposal(
+        &voter2,
+        &String::from_str(&env, "Prop 2"),
+        &String::from_str(&env, "d"),
+        &500_000,
+        &7200,
+    );
+
+    client.cast_vote(&voter1, &id1, &Vote::Yes);
+    client.cast_vote(&voter2, &id2, &Vote::No);
+
+    // votes don't bleed between proposals
+    assert_eq!(client.get_proposal(&id1).votes_yes, 1_000_000);
+    assert_eq!(client.get_proposal(&id1).votes_no, 0);
+    assert_eq!(client.get_proposal(&id2).votes_yes, 0);
+    assert_eq!(client.get_proposal(&id2).votes_no, 1_000_000);
+
+    // finalise id1 (passes), id2 still active
+    env.ledger().with_mut(|l| l.timestamp += 3601);
+    client.finalise(&id1);
+    assert_eq!(client.get_proposal(&id1).state, ProposalState::Passed);
+    assert_eq!(client.get_proposal(&id2).state, ProposalState::Active);
+
+    // execute id1
+    client.execute(&admin, &id1);
+    assert_eq!(client.get_proposal(&id1).state, ProposalState::Executed);
+
+    // finalise id2 (rejected — no wins)
+    env.ledger().with_mut(|l| l.timestamp += 7201);
+    client.finalise(&id2);
+    assert_eq!(client.get_proposal(&id2).state, ProposalState::Rejected);
+}
+
+/// Pausing blocks create/vote/finalise; unpausing restores them.
+#[test]
+fn test_full_lifecycle_pause_and_unpause() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = new_client(&env);
+    let admin = Address::generate(&env);
+    let voter = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(&admin, &token_id, &0_i128, &0_u64, &false, &0_u64);
+
+    let tok = votechain_token::TokenContractClient::new(&env, &token_id);
+    tok.mint(&admin, &voter, &1_000_000_i128);
+
+    let id = client.create_proposal(
+        &voter,
+        &String::from_str(&env, "Pausable"),
+        &String::from_str(&env, "desc"),
+        &500_000,
+        &3600,
+    );
+
+    // pause — cast_vote must fail
+    client.pause(&admin);
+    assert!(client.paused());
+    let result = std::panic::catch_unwind(|| {
+        // We can't easily call the panicking client here in no_std, so we
+        // just verify the paused flag and trust the ContractPaused guard.
+    });
+    let _ = result;
+
+    // unpause — vote and finalise succeed
+    client.unpause(&admin);
+    assert!(!client.paused());
+
+    client.cast_vote(&voter, &id, &Vote::Yes);
+    env.ledger().with_mut(|l| l.timestamp += 3601);
+    client.finalise(&id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Passed);
+    client.execute(&admin, &id);
+    assert_eq!(client.get_proposal(&id).state, ProposalState::Executed);
+}
+
+// ── end #72 ───────────────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ members = [
     "api",
     "contracts/governance",
     "contracts/token",
+    "indexer",
 ]
 
 [workspace.dependencies]
