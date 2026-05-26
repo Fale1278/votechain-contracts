@@ -207,6 +207,80 @@ fn test_transfer_negative_amount() {
 }
 
 #[test]
+fn test_initialize_zero_address_reverts() {
+    let (env, c) = setup();
+    let zero = Address::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    );
+    c.initialize(&zero, &1_000);
+}
+
+#[test]
+fn test_get_version() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    c.initialize(&admin, &1_000);
+    assert_eq!(c.get_version(), (1, 0, 0));
+}
+
+#[test]
+fn test_approve_sets_allowance_and_allows_transfer_from() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    c.initialize(&admin, &1_000);
+    c.approve(&admin, &spender, &500);
+    assert_eq!(allowance(&env, &admin, &spender), 500);
+
+    c.transfer_from(&spender, &admin, &recipient, &200);
+    assert_eq!(c.balance(&admin), 800);
+    assert_eq!(c.balance(&recipient), 200);
+    assert_eq!(allowance(&env, &admin, &spender), 300);
+}
+
+#[test]
+#[should_panic]
+fn test_transfer_from_insufficient_allowance() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    c.initialize(&admin, &1_000);
+    c.approve(&admin, &spender, &100);
+    c.transfer_from(&spender, &admin, &recipient, &200);
+}
+
+#[test]
+#[should_panic]
+fn test_transfer_from_insufficient_balance() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    c.initialize(&admin, &100);
+    c.approve(&admin, &spender, &500);
+    c.transfer_from(&spender, &admin, &recipient, &200);
+}
+
+#[test]
+#[should_panic]
+fn test_approve_zero_address_reverts() {
+    let (env, c) = setup();
+    let admin = Address::generate(&env);
+    let zero = Address::from_str(
+        &env,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    );
+    c.initialize(&admin, &1_000);
+    c.approve(&admin, &zero, &100);
+}
+
+#[test]
 fn test_transfer_event_emitted() {
     let (env, c) = setup();
     let admin = Address::generate(&env);
